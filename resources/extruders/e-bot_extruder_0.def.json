@@ -1,0 +1,43 @@
+{
+    "id": "e-bot_extruder_0",
+    "version": 2,
+    "name": "Titan aero direct extruder",
+    "inherits": "fdmextruder",
+    "metadata": {
+        "machine": "e-bot",
+        "position": "0"
+    },
+    
+    "settings": {
+        "retraction_retract_speed_mm_min":
+        {
+            "label": "Retraction Retract Speed in mm/min",
+            "description": "The speed at which the filament is retracted during a retraction move.",
+            "unit": "mm/min",
+            "type": "int",
+            "enabled": false,
+            "value": "round(retraction_retract_speed * 60)",
+            "settable_per_mesh": false,
+            "settable_per_extruder": true
+        },
+        "retraction_prime_speed_mm_min":
+        {
+            "label": "Retraction Prime Speed in mm/min",
+            "description": "The speed at which the filament is primed during a retraction move.",
+            "unit": "mm/min",
+            "type": "int",
+            "enabled": false,
+            "value": "round(retraction_prime_speed * 60)",
+            "settable_per_mesh": false,
+            "settable_per_extruder": true
+        }
+},
+
+    "overrides": {
+        "machine_extruder_start_code": { "default_value": "M207 F{retraction_retract_speed_mm_min} S{retraction_amount} Z0 ;Setup firmware retract (Cura does z-hop explicitly with G1)\nM208 F{retraction_prime_speed_mm_min} S{retraction_extra_prime_amount} ;Setup firmware retract\n" },
+        "extruder_nr": { "default_value": 0 },
+        "machine_nozzle_size": { "default_value": 0.4 },
+        "line_width": { "default_value": 0.5 },
+        "material_diameter": { "default_value": 1.75 }
+    }
+}
