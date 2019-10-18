@@ -2,7 +2,7 @@
 # Author:   Kirill Shashlov
 # Date:     October, 2019
 
-# Licence: CC BY-SA 3.0
+# Licence: AGPLv3 or higher
 
 
 from ..Script import Script

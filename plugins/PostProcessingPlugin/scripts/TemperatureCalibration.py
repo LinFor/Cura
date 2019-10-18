@@ -2,7 +2,7 @@
 # Author:   Kirill Shashlov
 # Date:     October, 2019
 
-# Licence: CC BY-SA 3.0
+# Licence: AGPLv3 or higher
 # Code based on Dryw Filtiarn Junction Deviation Calibration toolkit (https://www.thingiverse.com/thing:3463159)
 
 from ..Script import Script
