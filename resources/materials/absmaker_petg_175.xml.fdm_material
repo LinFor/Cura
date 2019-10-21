@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='utf-8'?>
+<fdmmaterial version="1.3" xmlns="http://www.ultimaker.com/material" xmlns:cura="http://www.ultimaker.com/cura">
+  <metadata>
+    <name>
+      <brand>ABS Maker</brand>
+      <material>PETG</material>
+      <color>Generic</color>
+      <label>PETG (ABS Maker)</label>
+    </name>
+    <description>ABS Maker PETG profile made by PingWin</description>
+    <version>2</version>
+    <color_code>#f3a112</color_code>
+    <GUID>0a5ab543-74d8-4699-a036-17deb0bc0733</GUID>
+    <compatible>True</compatible>
+    <adhesion_info>Set your prime speed to a low value (8mm/sec)</adhesion_info>
+  </metadata>
+  <properties>
+    <density>1.38</density>
+    <diameter>1.75</diameter>
+  </properties>
+  <settings>
+    <setting key="print temperature">220.0</setting>
+    <setting key="heated bed temperature">75.0</setting>
+    <setting key="standby temperature">120</setting>
+    <setting key="print cooling">40.0</setting>
+    <setting key="retraction amount">0.6</setting>
+    <setting key="retraction speed">20.0</setting>
+  </settings>
+</fdmmaterial>
