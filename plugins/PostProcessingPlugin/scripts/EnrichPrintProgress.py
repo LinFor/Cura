@@ -11,7 +11,7 @@ from math import ceil
 import time
 import re
 
-class MState:
+class EnrichPrintProgress(Script):
     FIRST_LAYER_ALREADY_FOUND = "FIRST_LAYER_ALREADY_FOUND"
     TOTAL_LAYERS_COUNT = "TOTAL_LAYERS_COUNT"
     TOTAL_OVERALL_TIME = "TOTAL_OVERALL_TIME"
@@ -26,20 +26,6 @@ class MState:
     IS_E_ABSOLUTE_MODE = "IS_E_ABSOLUTE_MODE"
     ACTUAL_E_ABS_POSITION = "ACTUAL_E_ABS_POSITION"
 
-    def __init__(self, previous = None):
-        self.previous = previous
-        self.state = dict(self.previous.state) if self.previous else dict()
-
-    def set(self, k, v):
-        self.state[k] = v
-    
-    def get(self, k, default = None):
-        return self.state.get(k, default)
-
-    def collapseInto(self, to):
-        to.state = dict(self.state)
-
-class EnrichPrintProgress(Script):
     def __init__(self):
         super().__init__()
 
@@ -97,12 +83,12 @@ class EnrichPrintProgress(Script):
 
     def execute(self, data):
         Logger.log("d", "Processing starts...")
-        begin_state = MState()
+        begin_state = dict()
 
         overallTime = self.getOverallTime(data)
-        begin_state.set(MState.TOTAL_OVERALL_TIME, overallTime)
+        begin_state[self.TOTAL_OVERALL_TIME] = overallTime
         totalLayersCount = self.getTotalLayersCount(data)
-        begin_state.set(MState.TOTAL_LAYERS_COUNT, totalLayersCount)
+        begin_state[self.TOTAL_LAYERS_COUNT] = totalLayersCount
         
         state = begin_state
         for lay_idx, layer in enumerate(data):
@@ -111,9 +97,9 @@ class EnrichPrintProgress(Script):
         Logger.log("d", "Processing complete.")
         return data
 
-    def processSingleLayer(self, layerData, state: MState) -> str:
+    def processSingleLayer(self, layerData, state: dict) -> str:
         currentLayerEndingTime = 0
-        previousLayerEndingTime = state.get(MState.LAYER_ENDING_TIME, 0)
+        previousLayerEndingTime = state.get(self.LAYER_ENDING_TIME, 0)
         # ;TIME_ELAPSED:6921.814718
         timeElapsedRe = r';TIME_ELAPSED:(\d+(\.\d+)?)\n'
         layerEndingTimeMatch = re.search(timeElapsedRe, layerData)
@@ -122,23 +108,23 @@ class EnrichPrintProgress(Script):
 
 
         currentLayerTimeCost = currentLayerEndingTime - previousLayerEndingTime
-        state.set(MState.LAYER_OVERALL_TIME, currentLayerTimeCost)
-        state.set(MState.LAYER_ENDING_TIME, currentLayerEndingTime)
+        state[self.LAYER_OVERALL_TIME] = currentLayerTimeCost
+        state[self.LAYER_ENDING_TIME] = currentLayerEndingTime
 
         layerCommandLines = layerData.split("\n")
         currentLayerOverallEmovement = self.getOverallEmovement(state, layerCommandLines)
-        state.set(MState.LAYER_OVERALL_E_MOVEMENT, currentLayerOverallEmovement)
+        state[self.LAYER_OVERALL_E_MOVEMENT] = currentLayerOverallEmovement
 
         new_state = state
         for index, command in enumerate(layerCommandLines):
-            after_command_state = MState(new_state)
+            after_command_state = dict(new_state)
             self.processSingleCommand(command, after_command_state)
 
             if currentLayerEndingTime and currentLayerOverallEmovement:
-                commandDifficultyContribution = (after_command_state.get(MState.E_POSITION, 0) - new_state.get(MState.E_POSITION, 0)) / currentLayerOverallEmovement
+                commandDifficultyContribution = (after_command_state.get(self.E_POSITION, 0) - new_state.get(self.E_POSITION, 0)) / currentLayerOverallEmovement
                 commandTimeCost = commandDifficultyContribution * currentLayerTimeCost
-                new_time = new_state.get(MState.TIME, 0) + commandTimeCost
-                after_command_state.set(MState.TIME, new_time)
+                new_time = new_state.get(self.TIME, 0) + commandTimeCost
+                after_command_state[self.TIME] = new_time
 
             if index < 10 or index % 10 == 0:
                 command_to_inject = self.getInjectionCommands(new_state, after_command_state)
@@ -147,12 +133,12 @@ class EnrichPrintProgress(Script):
                 
             new_state = after_command_state
 
-        new_state.collapseInto(state)
-        state.set(MState.TIME, currentLayerEndingTime)
+        state.update(new_state)
+        state[self.TIME] = currentLayerEndingTime
 
         return "\n".join(layerCommandLines)
 
-    def processSingleCommand(self, commandLine, state: MState):
+    def processSingleCommand(self, commandLine, state: dict):
         mCommand = self.getValue(commandLine, "M")
         gCommand = self.getValue(commandLine, "G")
         if mCommand in [73, 117]:
@@ -160,38 +146,38 @@ class EnrichPrintProgress(Script):
 
         if commandLine.startswith(";LAYER:"):
             # Count layer change
-            state.set(MState.FIRST_LAYER_ALREADY_FOUND, True)
-            state.set(MState.LAYER_NUMBER, int(commandLine[commandLine.find(":") + 1:]))
+            state[self.FIRST_LAYER_ALREADY_FOUND] = True
+            state[self.LAYER_NUMBER] = int(commandLine[commandLine.find(":") + 1:])
             return
 
-        isEabsoluteMode = state.get(MState.IS_E_ABSOLUTE_MODE, True)
+        isEabsoluteMode = state.get(self.IS_E_ABSOLUTE_MODE, True)
         if (mCommand == 82 or gCommand == 90) and isEabsoluteMode == False:
             # Switch to absolute
-            state.set(MState.IS_E_ABSOLUTE_MODE, True)
+            state[self.IS_E_ABSOLUTE_MODE] = True
             return
         if (mCommand == 83 or gCommand == 91) and isEabsoluteMode == True:
             # Switch to relative
-            state.set(MState.IS_E_ABSOLUTE_MODE, False)
+            state[self.IS_E_ABSOLUTE_MODE] = False
             return
         if gCommand == 92:
             # Update stored position
-            state.set(MState.ACTUAL_E_ABS_POSITION, self.getValue(commandLine, "E", state.get(MState.ACTUAL_E_ABS_POSITION)))
+            state[self.ACTUAL_E_ABS_POSITION] = self.getValue(commandLine, "E", state.get(self.ACTUAL_E_ABS_POSITION, 0))
             return
 
         if gCommand in [0, 1]:
             # Process movement
             if isEabsoluteMode:
-                previous_e_abs_position = state.get(MState.ACTUAL_E_ABS_POSITION, 0)
-                previous_e_position = state.get(MState.E_POSITION, 0)
+                previous_e_abs_position = state.get(self.ACTUAL_E_ABS_POSITION, 0)
+                previous_e_position = state.get(self.E_POSITION, 0)
                 new_e_abs_position = self.getValue(commandLine, "E", previous_e_abs_position)
-                state.set(MState.ACTUAL_E_ABS_POSITION, new_e_abs_position)
-                state.set(MState.E_POSITION, previous_e_position + new_e_abs_position - previous_e_abs_position)
+                state[self.ACTUAL_E_ABS_POSITION] = new_e_abs_position
+                state[self.E_POSITION] = previous_e_position + new_e_abs_position - previous_e_abs_position
             else:
-                previous_e_abs_position = state.get(MState.ACTUAL_E_ABS_POSITION, 0)
-                previous_e_position = state.get(MState.E_POSITION, 0)
+                previous_e_abs_position = state.get(self.ACTUAL_E_ABS_POSITION, 0)
+                previous_e_position = state.get(self.E_POSITION, 0)
                 movement = self.getValue(commandLine, "E", 0)
-                state.set(MState.ACTUAL_E_ABS_POSITION, previous_e_abs_position + movement)
-                state.set(MState.E_POSITION, previous_e_position + movement)
+                state[self.ACTUAL_E_ABS_POSITION] = previous_e_abs_position + movement
+                state[self.E_POSITION] = previous_e_position + movement
             return
         return
 
@@ -225,20 +211,20 @@ class EnrichPrintProgress(Script):
 
         return -1
 
-    def getOverallEmovement(self, begin_state: MState, commandLines) -> float:
-        state = MState(begin_state)
+    def getOverallEmovement(self, begin_state: dict, commandLines) -> float:
+        state = dict(begin_state)
         for commandLine in commandLines:
             self.processSingleCommand(commandLine, state)
         
-        return state.get(MState.E_POSITION, 0) - begin_state.get(MState.E_POSITION, 0)
+        return state.get(self.E_POSITION, 0) - begin_state.get(self.E_POSITION, 0)
 
-    def getInjectionCommands(self, previous: MState, current: MState) -> list:
-        if not current.get(MState.FIRST_LAYER_ALREADY_FOUND):
+    def getInjectionCommands(self, previous: dict, current: dict) -> list:
+        if not current.get(self.FIRST_LAYER_ALREADY_FOUND, False):
             return []
         
         res = []
-        current_time = current.get(MState.TIME)
-        overall_time = current.get(MState.TOTAL_OVERALL_TIME)
+        current_time = current.get(self.TIME, None)
+        overall_time = current.get(self.TOTAL_OVERALL_TIME, None)
         percent_change_time = previous.get("NEXT_PERCENT_CHANGE_TIME", 0)
         is_percent_changed = (overall_time > 0) and (current_time > percent_change_time)
         if is_percent_changed:
@@ -253,15 +239,15 @@ class EnrichPrintProgress(Script):
                     current.set("M73_MESSAGE", current_m73)
         
         if self.getSettingValueByKey("useM117"):
-            previous_layer = previous.get(MState.LAYER_NUMBER)
-            current_layer = current.get(MState.LAYER_NUMBER)
+            previous_layer = previous.get(self.LAYER_NUMBER, None)
+            current_layer = current.get(self.LAYER_NUMBER, None)
             if is_percent_changed or (previous_layer != current_layer):
                 previous_m117 = current.get("M117_MESSAGE")
                 current_m117 = "M117"
                 if self.getSettingValueByKey("showProgress"):
                     current_m117 += " {0:.1f}%".format(current_time * 100 / overall_time)
                 if self.getSettingValueByKey("showCurrentLayer"):
-                    total_layers_count = current.get(MState.TOTAL_LAYERS_COUNT)
+                    total_layers_count = current.get(self.TOTAL_LAYERS_COUNT, None)
                     if total_layers_count > 0:
                         current_m117 += " L{0:d}/{1:d}".format(current_layer, total_layers_count)
                     else:
