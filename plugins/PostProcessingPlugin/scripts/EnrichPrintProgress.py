@@ -9,7 +9,6 @@ from UM.Application import Application
 from UM.Logger import Logger
 from math import ceil
 import time
-import re
 
 class EnrichPrintProgress(Script):
     FIRST_LAYER_ALREADY_FOUND = "FIRST_LAYER_ALREADY_FOUND"
@@ -90,6 +89,15 @@ class EnrichPrintProgress(Script):
 
     def execute(self, data):
         Logger.log("d", "Processing starts...")
+
+        self.interpolateByE = self.getSettingValueByKey("interpolateByE")
+        self.useM73 = self.getSettingValueByKey("useM73")
+        self.useM117 = self.getSettingValueByKey("useM117")
+        self.showProgress = self.getSettingValueByKey("showProgress")
+        self.showCurrentLayer = self.getSettingValueByKey("showCurrentLayer")
+        self.showElapsedTime = self.getSettingValueByKey("showElapsedTime")
+        self.showLeftTime = self.getSettingValueByKey("showLeftTime")
+
         begin_state = dict()
 
         begin_state[self.TOTAL_OVERALL_TIME] = self.getOverallTime(data)
@@ -103,15 +111,12 @@ class EnrichPrintProgress(Script):
         return data
 
     def processSingleLayer(self, layerData, state: dict) -> str:
-        currentLayerEndingTime = 0
         previousLayerEndingTime = state.get(self.LAYER_ENDING_TIME, 0)
         # ;TIME_ELAPSED:6921.814718
-        timeElapsedRe = r';TIME_ELAPSED:(\d+(\.\d+)?)\n'
-        layerEndingTimeMatch = re.search(timeElapsedRe, layerData)
-        if layerEndingTimeMatch:
-            currentLayerEndingTime = float(layerEndingTimeMatch.group(1))
+        currentLayerEndingTime_str = self.getFirstSubstringBetween(layerData, ";TIME_ELAPSED:", "\n")
+        currentLayerEndingTime = float(currentLayerEndingTime_str) if currentLayerEndingTime_str else previousLayerEndingTime
 
-        if self.getSettingValueByKey("interpolateByE"):
+        if self.interpolateByE:
             currentLayerTimeCost = currentLayerEndingTime - previousLayerEndingTime
             state[self.LAYER_OVERALL_TIME] = currentLayerTimeCost
             state[self.LAYER_ENDING_TIME] = currentLayerEndingTime
@@ -131,7 +136,7 @@ class EnrichPrintProgress(Script):
                     new_time = new_state.get(self.TIME, 0) + commandTimeCost
                     after_command_state[self.TIME] = new_time
 
-                if index < 10 or index % 10 == 0:
+                if index < 5 or index % 5 == 0:
                     command_to_inject = self.getInjectionCommands(new_state, after_command_state)
                     for ins_index, injection_command in enumerate(command_to_inject, index + 1):
                         layerCommandLines.insert(ins_index, injection_command)
@@ -145,17 +150,17 @@ class EnrichPrintProgress(Script):
         else:
             new_state = dict(state)
             layer_num = self.getLayerNum(layerData)
-            if layer_num:
+            if layer_num is not None:
                 new_state[self.LAYER_NUMBER] = layer_num
                 new_state[self.FIRST_LAYER_ALREADY_FOUND] = True
             new_state[self.LAYER_ENDING_TIME] = currentLayerEndingTime
 
-            injection_commands = "\n".join(self.getInjectionCommands(state, new_state))
+            injection_commands = self.getInjectionCommands(state, new_state)
 
             new_state[self.TIME] = currentLayerEndingTime
             state.update(new_state)
 
-            return "\n".join([injection_commands, layerData])
+            return "\n".join(injection_commands + [layerData])
 
     def processSingleCommand(self, commandLine, state: dict):
         mCommand = self.getValue(commandLine, "M")
@@ -166,7 +171,7 @@ class EnrichPrintProgress(Script):
         if commandLine.startswith(";LAYER:"):
             # Count layer change
             state[self.FIRST_LAYER_ALREADY_FOUND] = True
-            state[self.LAYER_NUMBER] = int(commandLine[commandLine.find(":") + 1:])
+            state[self.LAYER_NUMBER] = int(self.getFirstSubstringBetween(commandLine, ":"))
             return
 
         isEabsoluteMode = state.get(self.IS_E_ABSOLUTE_MODE, True)
@@ -200,44 +205,48 @@ class EnrichPrintProgress(Script):
             return
         return
 
-    def getOverallTime(self, data) -> int:
+    def getFirstSubstringBetween(self, input_data: str, start: str, end: str = None) -> str:
+        start_index = input_data.find(start)
+        if start_index == -1:
+            return None
+        start_index += len(start)
+        if not end:
+            return input_data[start_index:]
+        end_index = input_data.find(end, start_index)
+        if end_index == -1:
+            return input_data[start_index:]
+        return input_data[start_index:end_index]
+
+    def getOverallTime(self, data) -> float:
         # ;TIME_ELAPSED:6921.814718
-        timeElapsedRe = r';TIME_ELAPSED:(\d+(\.\d+)?)\n'
 
         # Get last TIME_ELAPSED
         i = len(data) - 1
         while i >= 0:
-            overallTimeMatch = re.search(timeElapsedRe, data[i])
-            if not overallTimeMatch:
-                i -= 1
-                continue
-            return float(overallTimeMatch.group(1))
-
+            elapsed_str = self.getFirstSubstringBetween(data[i], ";TIME_ELAPSED:", "\n")
+            if elapsed_str:
+                return float(elapsed_str)
+            i -= 1
         return None
     
     def getTotalLayersCount(self, data) -> int:
         # ;LAYER:195
-        layerRe = r';LAYER:(\d+)\n'
 
         # Get last LAYER
         i = len(data) - 1
         while i >= 0:
-            currentLayerMatch = re.search(layerRe, data[i])
-            if not currentLayerMatch:
-                i -= 1
-                continue
-            return int(currentLayerMatch.group(1)) + 1
-
+            index_str = self.getFirstSubstringBetween(data[i], ";LAYER:", "\n")
+            if index_str:
+                return int(index_str) + 1
+            i -= 1
         return None
 
     def getLayerNum(self, data) -> int:
         # ;LAYER:195
-        layerRe = r';LAYER:(\d+)\n'
-
-        currentLayerMatch = re.search(layerRe, data)
-        if not currentLayerMatch:
-            return None
-        return int(currentLayerMatch.group(1)) + 1
+        index_str = self.getFirstSubstringBetween(data, ";LAYER:", "\n")
+        if index_str:
+            return int(index_str)
+        return None
 
     def getOverallEmovement(self, begin_state: dict, commandLines) -> float:
         state = dict(begin_state)
@@ -251,14 +260,14 @@ class EnrichPrintProgress(Script):
             return []
         
         res = []
-        current_time = current.get(self.TIME, None)
+        current_time = current.get(self.TIME, 0)
         overall_time = current.get(self.TOTAL_OVERALL_TIME, None)
         percent_change_time = previous.get("NEXT_PERCENT_CHANGE_TIME", 0)
-        is_percent_changed = overall_time and (current_time > percent_change_time)
+        is_percent_changed = overall_time and (current_time >= percent_change_time)
         if is_percent_changed:
             current["NEXT_PERCENT_CHANGE_TIME"] = ceil(current_time + 0.0001 * overall_time)
 
-        if self.getSettingValueByKey("useM73"):
+        if self.useM73:
             if is_percent_changed:
                 previous_m73 = current.get("M73_MESSAGE", "")
                 current_m73 = "M73 P{0:.2f}".format(current_time * 100 / overall_time)
@@ -266,23 +275,23 @@ class EnrichPrintProgress(Script):
                     res.append(current_m73)
                     current["M73_MESSAGE"] = current_m73
         
-        if self.getSettingValueByKey("useM117"):
-            previous_layer = previous.get(self.LAYER_NUMBER, None)
-            current_layer = current.get(self.LAYER_NUMBER, None)
+        if self.useM117:
+            previous_layer = previous.get(self.LAYER_NUMBER, 0)
+            current_layer = current.get(self.LAYER_NUMBER, 0) + 1
             if is_percent_changed or (previous_layer != current_layer):
                 previous_m117 = current.get("M117_MESSAGE", "")
                 current_m117 = "M117"
-                if self.getSettingValueByKey("showProgress"):
+                if self.showProgress:
                     current_m117 += " {0:.1f}%".format(current_time * 100 / overall_time)
-                if self.getSettingValueByKey("showCurrentLayer"):
+                if self.showCurrentLayer:
                     total_layers_count = current.get(self.TOTAL_LAYERS_COUNT, None)
                     if total_layers_count:
                         current_m117 += " L{0:d}/{1:d}".format(current_layer, total_layers_count)
                     else:
                         current_m117 += " L{0:d}/?".format(current_layer)
-                if self.getSettingValueByKey("showElapsedTime"):
+                if self.showElapsedTime:
                     current_m117 += time.strftime(" P%H-%M", time.gmtime(current_time))
-                if (self.getSettingValueByKey("showLeftTime")) and overall_time:
+                if self.showLeftTime and overall_time:
                     current_m117 += time.strftime(" E%H-%M", time.gmtime(overall_time - current_time))
 
                 if previous_m117 != current_m117:
