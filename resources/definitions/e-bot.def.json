@@ -25,6 +25,21 @@
         "has_materials": true,
         "preferred_material": "generic_petg"
     },
+    "settings": {
+        "junction_deviation_mm":
+        {
+            "label": "Junction deviation",
+            "description": "Junction deviation in mm, http://blog.kyneticcnc.com/2018/10/computing-junction-deviation-for-marlin.html",
+            "unit": "mm",
+            "type": "float",
+            "minimum_value": "0.01",
+            "maximum_value": "0.30",
+            "enabled": false,
+            "value": "round(0.4 * jerk_print * jerk_print / acceleration_print, 3)",
+            "settable_per_mesh": false,
+            "settable_per_extruder": false
+        }
+    },
     "overrides": {
         "machine_name": { "default_value": "Ё-Bot" },
         "machine_firmware_retract": { "value": true },
@@ -33,7 +48,7 @@
         "machine_depth": { "default_value": 330 },
         "machine_height": { "default_value": 270 },
 
-        "machine_start_gcode": { "default_value": "M76 ;Pause print timer\nM201 X{machine_max_acceleration_x} Y{machine_max_acceleration_y} Z{machine_max_acceleration_z} E{machine_max_acceleration_e} ;Setup machine max acceleration\nM203 X{machine_max_feedrate_x} Y{machine_max_feedrate_y} Z{machine_max_feedrate_z} E{machine_max_feedrate_e} ;Setup machine max feedrate\nM204 P{acceleration_print} R{acceleration_print} T{acceleration_travel} ;Setup Print/Retract/Travel acceleration\nM205 J0.080 ;Setup Junction Deviation\nM220 S100 ;Reset Feedrate\nM221 S100 ;Reset Flowrate\n\nG28 ;Home\nG92 E0 ;Reset Extruder\nG0 Z5 ;Move Z Axis up to safe height\nG27 P0 ;Go to flying parking position\nM190 S{material_bed_temperature} ;Heat bed\nM140 S{material_bed_temperature_layer_0} ;Continue to heat if needed\nG27 P1 ;Go to parking position\nM109 S{material_initial_print_temperature} ;Heat extruder\nM104 S{material_print_temperature_layer_0} ;Continue to heat if needed\nM75 ;Start print timer" },
+        "machine_start_gcode": { "default_value": "M76 ;Pause print timer\nM201 X{machine_max_acceleration_x} Y{machine_max_acceleration_y} Z{machine_max_acceleration_z} E{machine_max_acceleration_e} ;Setup machine max acceleration\nM203 X{machine_max_feedrate_x} Y{machine_max_feedrate_y} Z{machine_max_feedrate_z} E{machine_max_feedrate_e} ;Setup machine max feedrate\nM204 P{acceleration_print} R{acceleration_print} T{acceleration_travel} ;Setup Print/Retract/Travel acceleration\nM205 J{junction_deviation_mm} ;Setup Junction Deviation\nM220 S100 ;Reset Feedrate\nM221 S100 ;Reset Flowrate\n\nG28 ;Home\nG92 E0 ;Reset Extruder\nG0 Z5 ;Move Z Axis up to safe height\nG27 P0 ;Go to flying parking position\nM190 S{material_bed_temperature} ;Heat bed\nM140 S{material_bed_temperature_layer_0} ;Continue to heat if needed\nG27 P1 ;Go to parking position\nM109 S{material_initial_print_temperature} ;Heat extruder\nM104 S{material_print_temperature_layer_0} ;Continue to heat if needed\nM75 ;Start print timer" },
         "machine_end_gcode": { "default_value": "M77 ;Stop print timer\nM73 P100 ;Set progress to completed state\nM104 S0 ;Turn off extruder heater\nM140 S0 ;Turn off bed heater\nM106 S0 ;Turn-off fan\nG10 ;Retract the filament\nG27 P0 ;Go to parking position\nM211 S1 ;Enable software enstops\nG90 ;Absolute positionning\nG0 Z{machine_height} F6000 ;Move bed down to present the model\nM84 ;Turn off motors" },
 
         "machine_max_feedrate_x": { "value": 500 },
@@ -56,7 +71,7 @@
         "machine_max_jerk_z": { "value": 0.4 },
         "machine_max_jerk_e": { "value": 5 },
         "jerk_enabled": { "value": false },
-        "jerk_print": { "value": 10 },
+        "jerk_print": { "value": 12.3 },
         "jerk_travel": { "value": "jerk_print" },
         "jerk_travel_layer_0": { "value": "jerk_travel" },
 
