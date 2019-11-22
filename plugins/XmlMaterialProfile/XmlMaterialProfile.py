@@ -1197,6 +1197,7 @@ class XmlMaterialProfile(InstanceContainer):
         "print cooling": "cool_fan_speed",
         "retraction amount": "retraction_amount",
         "retraction speed": "retraction_speed",
+        "linear advance factor": "material_linear_advance_factor",
         "adhesion tendency": "material_adhesion_tendency",
         "surface energy": "material_surface_energy",
         "shrinkage percentage": "material_shrinkage_percentage",
