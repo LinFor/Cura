@@ -36,9 +36,15 @@ class ZeroConfClient:
     def start(self) -> None:
         self._service_changed_request_queue = Queue()
         self._service_changed_request_event = Event()
-        self._service_changed_request_thread = Thread(target=self._handleOnServiceChangedRequests, daemon=True)
+        try:
+            self._zero_conf = Zeroconf()
+        # CURA-6855 catch WinErrors
+        except OSError:
+            Logger.logException("e", "Failed to create zeroconf instance.")
+            return
+
+        self._service_changed_request_thread = Thread(target = self._handleOnServiceChangedRequests, daemon = True)
         self._service_changed_request_thread.start()
-        self._zero_conf = Zeroconf()
         self._zero_conf_browser = ServiceBrowser(self._zero_conf, self.ZERO_CONF_NAME, [self._queueService])
 
     # Cleanup ZeroConf resources.
@@ -117,7 +123,9 @@ class ZeroConfClient:
 
         # Request more data if info is not complete
         if not info.address:
-            info = zero_conf.get_service_info(service_type, name)
+            new_info = zero_conf.get_service_info(service_type, name)
+            if new_info is not None:
+                info = new_info
 
         if info:
             type_of_device = info.properties.get(b"type", None)

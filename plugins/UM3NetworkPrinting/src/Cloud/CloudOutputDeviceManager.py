@@ -1,18 +1,21 @@
 # Copyright (c) 2019 Ultimaker B.V.
 # Cura is released under the terms of the LGPLv3 or higher.
-from typing import Dict, List, Optional
 
+from typing import Dict, List, Optional
 from PyQt5.QtCore import QTimer
 
 from UM import i18nCatalog
+from UM.Logger import Logger  # To log errors talking to the API.
 from UM.Signal import Signal
 from cura.API import Account
 from cura.CuraApplication import CuraApplication
+from cura.Settings.CuraStackBuilder import CuraStackBuilder
 from cura.Settings.GlobalStack import GlobalStack
 
 from .CloudApiClient import CloudApiClient
 from .CloudOutputDevice import CloudOutputDevice
 from ..Models.Http.CloudClusterResponse import CloudClusterResponse
+from ..Messages.CloudPrinterDetectedMessage import CloudPrinterDetectedMessage
 
 
 ## The cloud output device manager is responsible for using the Ultimaker Cloud APIs to manage remote clusters.
@@ -36,7 +39,7 @@ class CloudOutputDeviceManager:
         # Persistent dict containing the remote clusters for the authenticated user.
         self._remote_clusters = {}  # type: Dict[str, CloudOutputDevice]
         self._account = CuraApplication.getInstance().getCuraAPI().account  # type: Account
-        self._api = CloudApiClient(self._account, on_error=lambda error: print(error))
+        self._api = CloudApiClient(self._account, on_error = lambda error: Logger.log("e", str(error)))
         self._account.loginStateChanged.connect(self._onLoginStateChanged)
 
         # Create a timer to update the remote cluster list
@@ -108,6 +111,7 @@ class CloudOutputDeviceManager:
         )
         self._remote_clusters[device.getId()] = device
         self.discoveredDevicesChanged.emit()
+        self._checkIfNewClusterWasAdded(device.clusterData.cluster_id)
         self._connectToActiveMachine()
 
     def _onDiscoveredDeviceUpdated(self, cluster_data: CloudClusterResponse) -> None:
@@ -137,14 +141,15 @@ class CloudOutputDeviceManager:
         if not device:
             return
 
-        # The newly added machine is automatically activated.
-        machine_manager = CuraApplication.getInstance().getMachineManager()
-        machine_manager.addMachine(device.printerType, device.clusterData.friendly_name)
-        active_machine = CuraApplication.getInstance().getGlobalContainerStack()
-        if not active_machine:
+        # Create a new machine and activate it.
+        # We do not use use MachineManager.addMachine here because we need to set the cluster ID before activating it.
+        new_machine = CuraStackBuilder.createMachine(device.name, device.printerType)
+        if not new_machine:
+            Logger.log("e", "Failed creating a new machine")
             return
-        active_machine.setMetaDataEntry(self.META_CLUSTER_ID, device.key)
-        self._connectToOutputDevice(device, active_machine)
+        new_machine.setMetaDataEntry(self.META_CLUSTER_ID, device.key)
+        CuraApplication.getInstance().getMachineManager().setActiveMachine(new_machine.getId())
+        self._connectToOutputDevice(device, new_machine)
 
     ##  Callback for when the active machine was changed by the user or a new remote cluster was found.
     def _connectToActiveMachine(self) -> None:
@@ -179,3 +184,10 @@ class CloudOutputDeviceManager:
         output_device_manager = CuraApplication.getInstance().getOutputDeviceManager()
         if device.key not in output_device_manager.getOutputDeviceIds():
             output_device_manager.addOutputDevice(device)
+
+    ## Checks if Cura has a machine stack (printer) for the given cluster ID and shows a message if it hasn't.
+    def _checkIfNewClusterWasAdded(self, cluster_id: str) -> None:
+        container_registry = CuraApplication.getInstance().getContainerRegistry()
+        cloud_machines = container_registry.findContainersMetadata(**{self.META_CLUSTER_ID: "*"})  # all cloud machines
+        if not any(machine[self.META_CLUSTER_ID] == cluster_id for machine in cloud_machines):
+            CloudPrinterDetectedMessage().show()

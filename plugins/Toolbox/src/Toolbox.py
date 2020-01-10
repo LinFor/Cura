@@ -1,4 +1,4 @@
-# Copyright (c) 2018 Ultimaker B.V.
+# Copyright (c) 2019 Ultimaker B.V.
 # Toolbox is released under the terms of the LGPLv3 or higher.
 
 import json
@@ -19,6 +19,7 @@ from UM.Version import Version
 from cura import ApplicationMetadata
 from cura import UltimakerCloudAuthentication
 from cura.CuraApplication import CuraApplication
+from cura.Machines.ContainerTree import ContainerTree
 
 from .AuthorsModel import AuthorsModel
 from .PackagesModel import PackagesModel
@@ -47,7 +48,7 @@ class Toolbox(QObject, Extension):
         self._download_progress = 0  # type: float
         self._is_downloading = False  # type: bool
         self._network_manager = None  # type: Optional[QNetworkAccessManager]
-        self._request_headers = [] # type: List[Tuple[bytes, bytes]]
+        self._request_headers = []  # type: List[Tuple[bytes, bytes]]
         self._updateRequestHeader()
 
         self._request_urls = {}  # type: Dict[str, QUrl]
@@ -58,13 +59,15 @@ class Toolbox(QObject, Extension):
         # The responses as given by the server parsed to a list.
         self._server_response_data = {
             "authors":             [],
-            "packages":            []
+            "packages":            [],
+            "updates":             [],
         }  # type: Dict[str, List[Any]]
 
         # Models:
         self._models = {
             "authors":             AuthorsModel(self),
             "packages":            PackagesModel(self),
+            "updates":             PackagesModel(self),
         }  # type: Dict[str, Union[AuthorsModel, PackagesModel]]
 
         self._plugins_showcase_model = PackagesModel(self)
@@ -185,18 +188,24 @@ class Toolbox(QObject, Extension):
             cloud_api_version = self._cloud_api_version,
             sdk_version = self._sdk_version
         )
+
+        # We need to construct a query like installed_packages=ID:VERSION&installed_packages=ID:VERSION, etc.
+        installed_package_ids_with_versions = [":".join(items) for items in
+                                               self._package_manager.getAllInstalledPackageIdsAndVersions()]
+        installed_packages_query = "&installed_packages=".join(installed_package_ids_with_versions)
+
         self._request_urls = {
             "authors": QUrl("{base_url}/authors".format(base_url = self._api_url)),
-            "packages": QUrl("{base_url}/packages".format(base_url = self._api_url))
+            "packages": QUrl("{base_url}/packages".format(base_url = self._api_url)),
+            "updates": QUrl("{base_url}/packages/package-updates?installed_packages={query}".format(
+                base_url = self._api_url, query = installed_packages_query))
         }
 
-        # Request the latest and greatest!
-        self._fetchPackageData()
+        # On boot we check which packages have updates.
+        if len(installed_package_ids_with_versions) > 0:
+            self._fetchPackageUpdates()
 
-    def _fetchPackageData(self):
-        # Create the network manager:
-        # This was formerly its own function but really had no reason to be as
-        # it was never called more than once ever.
+    def _prepareNetworkManager(self):
         if self._network_manager is not None:
             self._network_manager.finished.disconnect(self._onRequestFinished)
             self._network_manager.networkAccessibleChanged.disconnect(self._onNetworkAccessibleChanged)
@@ -204,10 +213,15 @@ class Toolbox(QObject, Extension):
         self._network_manager.finished.connect(self._onRequestFinished)
         self._network_manager.networkAccessibleChanged.connect(self._onNetworkAccessibleChanged)
 
+    def _fetchPackageUpdates(self):
+        self._prepareNetworkManager()
+        self._makeRequestByType("updates")
+
+    def _fetchPackageData(self):
+        self._prepareNetworkManager()
         # Make remote requests:
         self._makeRequestByType("packages")
         self._makeRequestByType("authors")
-
         # Gather installed packages:
         self._updateInstalledModels()
 
@@ -233,7 +247,7 @@ class Toolbox(QObject, Extension):
         if not plugin_path:
             return None
         path = os.path.join(plugin_path, "resources", "qml", qml_name)
-        
+
         dialog = self._application.createQmlComponent(path, {"toolbox": self})
         if not dialog:
             raise Exception("Failed to create Marketplace dialog")
@@ -359,15 +373,22 @@ class Toolbox(QObject, Extension):
     @pyqtSlot()
     def resetMaterialsQualitiesAndUninstall(self) -> None:
         application = CuraApplication.getInstance()
-        material_manager = application.getMaterialManager()
-        quality_manager = application.getQualityManager()
         machine_manager = application.getMachineManager()
+        container_tree = ContainerTree.getInstance()
 
         for global_stack, extruder_nr, container_id in self._package_used_materials:
-            default_material_node = material_manager.getDefaultMaterial(global_stack, extruder_nr, global_stack.extruders[extruder_nr].variant.getName())
+            extruder = global_stack.extruderList[int(extruder_nr)]
+            approximate_diameter = extruder.getApproximateMaterialDiameter()
+            variant_node = container_tree.machines[global_stack.definition.getId()].variants[extruder.variant.getName()]
+            default_material_node = variant_node.preferredMaterial(approximate_diameter)
             machine_manager.setMaterial(extruder_nr, default_material_node, global_stack = global_stack)
         for global_stack, extruder_nr, container_id in self._package_used_qualities:
-            default_quality_group = quality_manager.getDefaultQualityType(global_stack)
+            variant_names = [extruder.variant.getName() for extruder in global_stack.extruderList]
+            material_bases = [extruder.material.getMetaDataEntry("base_file") for extruder in global_stack.extruderList]
+            extruder_enabled = [extruder.isEnabled for extruder in global_stack.extruderList]
+            definition_id = global_stack.definition.getId()
+            machine_node = container_tree.machines[definition_id]
+            default_quality_group = machine_node.getQualityGroups(variant_names, material_bases, extruder_enabled)[machine_node.preferred_quality_type]
             machine_manager.setQualityGroup(default_quality_group, global_stack = global_stack)
 
         if self._package_id_to_uninstall is not None:
@@ -610,7 +631,7 @@ class Toolbox(QObject, Extension):
                             if not self._models[response_type]:
                                 Logger.log("e", "Could not find the %s model.", response_type)
                                 break
-                            
+
                             self._server_response_data[response_type] = json_data["data"]
                             self._models[response_type].setMetadata(self._server_response_data[response_type])
 
@@ -622,6 +643,10 @@ class Toolbox(QObject, Extension):
                             elif response_type == "authors":
                                 self._models[response_type].setFilter({"package_types": "material"})
                                 self._models[response_type].setFilter({"tags": "generic"})
+                            elif response_type == "updates":
+                                # Tell the package manager that there's a new set of updates available.
+                                packages = set([pkg["package_id"] for pkg in self._server_response_data[response_type]])
+                                self._package_manager.setPackagesWithUpdate(packages)
 
                             self.metadataChanged.emit()
 
@@ -652,7 +677,7 @@ class Toolbox(QObject, Extension):
                 self.setIsDownloading(False)
                 self._download_reply = cast(QNetworkReply, self._download_reply)
                 self._download_reply.downloadProgress.disconnect(self._onDownloadProgress)
-                
+
                 # Check if the download was sucessfull
                 if self._download_reply.attribute(QNetworkRequest.HttpStatusCodeAttribute) != 200:
                     try:
