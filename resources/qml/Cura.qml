@@ -1,4 +1,4 @@
-// Copyright (c) 2019 Ultimaker B.V.
+// Copyright (c) 2020 Ultimaker B.V.
 // Cura is released under the terms of the LGPLv3 or higher.
 
 import QtQuick 2.7
@@ -21,7 +21,17 @@ UM.MainWindow
     id: base
 
     // Cura application window title
-    title: catalog.i18nc("@title:window", "Ultimaker Cura")
+    title:
+    {
+        let result = "";
+        if(PrintInformation !== null && PrintInformation.jobName != "")
+        {
+            result += PrintInformation.jobName + " - ";
+        }
+        result += CuraApplication.applicationDisplayName;
+        return result;
+    }
+
     backgroundColor: UM.Theme.getColor("viewport_background")
 
     UM.I18nCatalog
@@ -228,7 +238,7 @@ UM.MainWindow
                             if (filename.toLowerCase().endsWith(".curapackage"))
                             {
                                 // Try to install plugin & close.
-                                CuraApplication.getPackageManager().installPackageViaDragAndDrop(filename);
+                                CuraApplication.installPackageViaDragAndDrop(filename);
                                 packageInstallDialog.text = catalog.i18nc("@label", "This package will be installed after restarting.");
                                 packageInstallDialog.icon = StandardIcon.Information;
                                 packageInstallDialog.open();
@@ -241,23 +251,6 @@ UM.MainWindow
                         openDialog.handleOpenFileUrls(nonPackages);
                     }
                 }
-            }
-
-            Toolbar
-            {
-                // The toolbar is the left bar that is populated by all the tools (which are dynamicly populated by
-                // plugins)
-                id: toolbar
-
-                property int mouseX: base.mouseX
-                property int mouseY: base.mouseY
-
-                anchors
-                {
-                    verticalCenter: parent.verticalCenter
-                    left: parent.left
-                }
-                visible: CuraApplication.platformActivity && !PrintInformation.preSliced
             }
 
             ObjectSelector
@@ -301,6 +294,32 @@ UM.MainWindow
                 }
             }
 
+            Toolbar
+            {
+                // The toolbar is the left bar that is populated by all the tools (which are dynamicly populated by
+                // plugins)
+                id: toolbar
+
+                property int mouseX: base.mouseX
+                property int mouseY: base.mouseY
+
+                anchors
+                {
+                    verticalCenter: parent.verticalCenter
+                    left: parent.left
+                }
+                visible: CuraApplication.platformActivity && !PrintInformation.preSliced
+            }
+
+            // A hint for the loaded content view. Overlay items / controls can safely be placed in this area
+            Item {
+                id: mainSafeArea
+                anchors.left: viewOrientationControls.right
+                anchors.right: main.right
+                anchors.top: main.top
+                anchors.bottom: main.bottom
+            }
+
             Loader
             {
                 // A stage can control this area. If nothing is set, it will therefore show the 3D view.
@@ -316,6 +335,12 @@ UM.MainWindow
                 }
 
                 source: UM.Controller.activeStage != null ? UM.Controller.activeStage.mainComponent : ""
+
+                onLoaded: {
+                    if (main.item.safeArea !== undefined){
+                       main.item.safeArea = Qt.binding(function() { return mainSafeArea });
+                    }
+                }
             }
 
             Loader
@@ -535,8 +560,8 @@ UM.MainWindow
     MessageDialog
     {
         id: exitConfirmationDialog
-        title: catalog.i18nc("@title:window", "Closing Cura")
-        text: catalog.i18nc("@label", "Are you sure you want to exit Cura?")
+        title: catalog.i18nc("@title:window %1 is the application name", "Closing %1").arg(CuraApplication.applicationDisplayName)
+        text: catalog.i18nc("@label %1 is the application name", "Are you sure you want to exit %1?").arg(CuraApplication.applicationDisplayName)
         icon: StandardIcon.Question
         modality: Qt.ApplicationModal
         standardButtons: StandardButton.Yes | StandardButton.No
@@ -548,7 +573,7 @@ UM.MainWindow
             if (!visible)
             {
                 // reset the text to default because other modules may change the message text.
-                text = catalog.i18nc("@label", "Are you sure you want to exit Cura?");
+                text = catalog.i18nc("@label %1 is the application name", "Are you sure you want to exit %1?").arg(CuraApplication.applicationDisplayName);
             }
         }
     }

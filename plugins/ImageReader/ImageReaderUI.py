@@ -1,4 +1,4 @@
-# Copyright (c) 2015 Ultimaker B.V.
+# Copyright (c) 2020 Ultimaker B.V.
 # Cura is released under the terms of the LGPLv3 or higher.
 
 import os
@@ -33,7 +33,9 @@ class ImageReaderUI(QObject):
         self.base_height = 0.4
         self.peak_height = 2.5
         self.smoothing = 1
-        self.lighter_is_higher = False;
+        self.lighter_is_higher = False
+        self.use_transparency_model = True
+        self.transmittance_1mm = 50.0  # based on pearl PLA
 
         self._ui_lock = threading.Lock()
         self._cancelled = False
@@ -75,6 +77,7 @@ class ImageReaderUI(QObject):
 
         self._ui_view.findChild(QObject, "Base_Height").setProperty("text", str(self.base_height))
         self._ui_view.findChild(QObject, "Peak_Height").setProperty("text", str(self.peak_height))
+        self._ui_view.findChild(QObject, "Transmittance").setProperty("text", str(self.transmittance_1mm))
         self._ui_view.findChild(QObject, "Smoothing").setProperty("value", self.smoothing)
 
     def _createConfigUI(self):
@@ -82,7 +85,7 @@ class ImageReaderUI(QObject):
             Logger.log("d", "Creating ImageReader config UI")
             path = os.path.join(PluginRegistry.getInstance().getPluginPath("ImageReader"), "ConfigUI.qml")
             self._ui_view = Application.getInstance().createQmlComponent(path, {"manager": self})
-            self._ui_view.setFlags(self._ui_view.flags() & ~Qt.WindowCloseButtonHint & ~Qt.WindowMinimizeButtonHint & ~Qt.WindowMaximizeButtonHint);
+            self._ui_view.setFlags(self._ui_view.flags() & ~Qt.WindowCloseButtonHint & ~Qt.WindowMinimizeButtonHint & ~Qt.WindowMaximizeButtonHint)
             self._disable_size_callbacks = False
 
     @pyqtSlot()
@@ -144,3 +147,11 @@ class ImageReaderUI(QObject):
     @pyqtSlot(int)
     def onImageColorInvertChanged(self, value):
         self.lighter_is_higher = (value == 1)
+
+    @pyqtSlot(int)
+    def onColorModelChanged(self, value):
+        self.use_transparency_model = (value == 0)
+
+    @pyqtSlot(int)
+    def onTransmittanceChanged(self, value):
+        self.transmittance_1mm = value

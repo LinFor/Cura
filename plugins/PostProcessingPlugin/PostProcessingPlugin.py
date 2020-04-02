@@ -1,23 +1,24 @@
 # Copyright (c) 2018 Jaime van Kessel, Ultimaker B.V.
 # The PostProcessingPlugin is released under the terms of the AGPLv3 or higher.
 
-from PyQt5.QtCore import QObject, pyqtProperty, pyqtSignal, pyqtSlot
-from typing import Dict, Type, TYPE_CHECKING, List, Optional, cast
-
-from UM.PluginRegistry import PluginRegistry
-from UM.Resources import Resources
-from UM.Application import Application
-from UM.Extension import Extension
-from UM.Logger import Logger
-
 import configparser  # The script lists are stored in metadata as serialised config files.
+import importlib.util
 import io  # To allow configparser to write to a string.
 import os.path
 import pkgutil
 import sys
-import importlib.util
+from typing import Dict, Type, TYPE_CHECKING, List, Optional, cast
 
+from PyQt5.QtCore import QObject, pyqtProperty, pyqtSignal, pyqtSlot
+
+from UM.Application import Application
+from UM.Extension import Extension
+from UM.Logger import Logger
+from UM.PluginRegistry import PluginRegistry
+from UM.Resources import Resources
+from UM.Trust import Trust
 from UM.i18n import i18nCatalog
+from cura import ApplicationMetadata
 from cura.CuraApplication import CuraApplication
 
 i18n_catalog = i18nCatalog("cura")
@@ -44,6 +45,9 @@ class PostProcessingPlugin(QObject, Extension):
         # There can be duplicates, which will be executed in sequence.
         self._script_list = []  # type: List[Script]
         self._selected_script_index = -1
+        self._global_container_stack = Application.getInstance().getGlobalContainerStack()
+        if self._global_container_stack:
+            self._global_container_stack.metaDataChanged.connect(self._restoreScriptInforFromMetadata)
 
         Application.getInstance().getOutputDeviceManager().writeStarted.connect(self.execute)
         Application.getInstance().globalContainerStackChanged.connect(self._onGlobalContainerStackChanged)  # When the current printer changes, update the list of scripts.
@@ -158,7 +162,13 @@ class PostProcessingPlugin(QObject, Extension):
             # Iterate over all scripts.
             if script_name not in sys.modules:
                 try:
-                    spec = importlib.util.spec_from_file_location(__name__ + "." + script_name, os.path.join(path, script_name + ".py"))
+                    file_path = os.path.join(path, script_name + ".py")
+                    if not self._isScriptAllowed(file_path):
+                        Logger.warning("Skipped loading post-processing script {}: not trusted".format(file_path))
+                        continue
+
+                    spec = importlib.util.spec_from_file_location(__name__ + "." + script_name,
+                                                                  file_path)
                     loaded_script = importlib.util.module_from_spec(spec)
                     if spec.loader is None:
                         continue
@@ -209,33 +219,34 @@ class PostProcessingPlugin(QObject, Extension):
         self.scriptListChanged.emit()
         self._propertyChanged()
 
-    ##  When the global container stack is changed, swap out the list of active
-    #   scripts.
-    def _onGlobalContainerStackChanged(self) -> None:
+    def _restoreScriptInforFromMetadata(self):
         self.loadAllScripts()
-        new_stack = Application.getInstance().getGlobalContainerStack()
+        new_stack = self._global_container_stack
         if new_stack is None:
             return
         self._script_list.clear()
-        if not new_stack.getMetaDataEntry("post_processing_scripts"): # Missing or empty.
-            self.scriptListChanged.emit() # Even emit this if it didn't change. We want it to write the empty list to the stack's metadata.
+        if not new_stack.getMetaDataEntry("post_processing_scripts"):  # Missing or empty.
+            self.scriptListChanged.emit()  # Even emit this if it didn't change. We want it to write the empty list to the stack's metadata.
             self.setSelectedScriptIndex(-1)
             return
 
         self._script_list.clear()
         scripts_list_strs = new_stack.getMetaDataEntry("post_processing_scripts")
-        for script_str in scripts_list_strs.split("\n"):  # Encoded config files should never contain three newlines in a row. At most 2, just before section headers.
+        for script_str in scripts_list_strs.split(
+                "\n"):  # Encoded config files should never contain three newlines in a row. At most 2, just before section headers.
             if not script_str:  # There were no scripts in this one (or a corrupt file caused more than 3 consecutive newlines here).
                 continue
             script_str = script_str.replace(r"\\\n", "\n").replace(r"\\\\", "\\\\")  # Unescape escape sequences.
-            script_parser = configparser.ConfigParser(interpolation = None)
+            script_parser = configparser.ConfigParser(interpolation=None)
             script_parser.optionxform = str  # type: ignore  # Don't transform the setting keys as they are case-sensitive.
             script_parser.read_string(script_str)
             for script_name, settings in script_parser.items():  # There should only be one, really! Otherwise we can't guarantee the order or allow multiple uses of the same script.
                 if script_name == "DEFAULT":  # ConfigParser always has a DEFAULT section, but we don't fill it. Ignore this one.
                     continue
-                if script_name not in self._loaded_scripts: # Don't know this post-processing plug-in.
-                    Logger.log("e", "Unknown post-processing script {script_name} was encountered in this global stack.".format(script_name = script_name))
+                if script_name not in self._loaded_scripts:  # Don't know this post-processing plug-in.
+                    Logger.log("e",
+                               "Unknown post-processing script {script_name} was encountered in this global stack.".format(
+                                   script_name=script_name))
                     continue
                 new_script = self._loaded_scripts[script_name]()
                 new_script.initialize()
@@ -245,7 +256,22 @@ class PostProcessingPlugin(QObject, Extension):
                 self._script_list.append(new_script)
 
         self.setSelectedScriptIndex(0)
+        # Ensure that we always force an update (otherwise the fields don't update correctly!)
+        self.selectedIndexChanged.emit()
         self.scriptListChanged.emit()
+        self._propertyChanged()
+
+    ##  When the global container stack is changed, swap out the list of active
+    #   scripts.
+    def _onGlobalContainerStackChanged(self) -> None:
+        if self._global_container_stack:
+            self._global_container_stack.metaDataChanged.disconnect(self._restoreScriptInforFromMetadata)
+
+        self._global_container_stack = Application.getInstance().getGlobalContainerStack()
+
+        if self._global_container_stack:
+            self._global_container_stack.metaDataChanged.connect(self._restoreScriptInforFromMetadata)
+        self._restoreScriptInforFromMetadata()
 
     @pyqtSlot()
     def writeScriptsToStack(self) -> None:
@@ -267,14 +293,18 @@ class PostProcessingPlugin(QObject, Extension):
 
         script_list_string = "\n".join(script_list_strs)  # ConfigParser should never output three newlines in a row when serialised, so it's a safe delimiter.
 
-        global_stack = Application.getInstance().getGlobalContainerStack()
-        if global_stack is None:
+        if self._global_container_stack is None:
             return
 
-        if "post_processing_scripts" not in global_stack.getMetaData():
-            global_stack.setMetaDataEntry("post_processing_scripts", "")
+        # Ensure we don't get triggered by our own write.
+        self._global_container_stack.metaDataChanged.disconnect(self._restoreScriptInforFromMetadata)
 
-        global_stack.setMetaDataEntry("post_processing_scripts", script_list_string)
+        if "post_processing_scripts" not in self._global_container_stack.getMetaData():
+            self._global_container_stack.setMetaDataEntry("post_processing_scripts", "")
+
+        self._global_container_stack.setMetaDataEntry("post_processing_scripts", script_list_string)
+        # We do want to listen to other events.
+        self._global_container_stack.metaDataChanged.connect(self._restoreScriptInforFromMetadata)
 
     ##  Creates the view used by show popup. The view is saved because of the fairly aggressive garbage collection.
     def _createView(self) -> None:
@@ -310,5 +340,27 @@ class PostProcessingPlugin(QObject, Extension):
         global_container_stack = Application.getInstance().getGlobalContainerStack()
         if global_container_stack is not None:
             global_container_stack.propertyChanged.emit("post_processing_plugin", "value")
+
+    @staticmethod
+    def _isScriptAllowed(file_path: str) -> bool:
+        """Checks whether the given file is allowed to be loaded"""
+        if not ApplicationMetadata.IsEnterpriseVersion:
+            # No signature needed
+            return True
+
+        dir_path = os.path.split(file_path)[0]  # type: str
+        plugin_path = PluginRegistry.getInstance().getPluginPath("PostProcessingPlugin")
+        assert plugin_path is not None  # appease mypy
+        bundled_path = os.path.join(plugin_path, "scripts")
+        if dir_path == bundled_path:
+            # Bundled scripts are trusted.
+            return True
+
+        trust_instance = Trust.getInstanceOrNone()
+        if trust_instance is not None and Trust.signatureFileExistsFor(file_path):
+            if trust_instance.signedFileCheck(file_path):
+                return True
+
+        return False  # Default verdict should be False, being the most secure fallback
 
 

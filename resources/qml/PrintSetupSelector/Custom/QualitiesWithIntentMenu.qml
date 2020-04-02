@@ -1,4 +1,4 @@
-// Copyright (c) 2019 Ultimaker B.V.
+// Copyright (c) 2020 Ultimaker B.V.
 // Cura is released under the terms of the LGPLv3 or higher.
 
 import QtQuick 2.10
@@ -164,6 +164,7 @@ Popup
                         visible: profilesList.visibleChildren.length > 1
                         anchors.left: parent.left
                         anchors.leftMargin: UM.Theme.getSize("default_margin").width
+                        color: UM.Theme.getColor("text_inactive")
                     }
 
                     Column

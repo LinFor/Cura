@@ -1,5 +1,5 @@
-#Copyright (c) 2019 Ultimaker B.V.
-#Cura is released under the terms of the LGPLv3 or higher.
+# Copyright (c) 2019 Ultimaker B.V.
+# Cura is released under the terms of the LGPLv3 or higher.
 
 from PyQt5.QtCore import QObject, pyqtProperty, pyqtSignal, pyqtSlot
 from typing import Any, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
@@ -126,7 +126,7 @@ class IntentManager(QObject):
     ##  The intent that gets selected by default when no intent is available for
     #   the configuration, an extruder can't match the intent that the user
     #   selects, or just when creating a new printer.
-    def getDefaultIntent(self) -> InstanceContainer:
+    def getDefaultIntent(self) -> "InstanceContainer":
         return empty_intent_container
 
     @pyqtProperty(str, notify = intentCategoryChanged)

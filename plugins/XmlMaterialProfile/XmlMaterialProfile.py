@@ -9,6 +9,7 @@ import sys
 from typing import Any, Dict, List, Optional, Tuple, cast, Set, Union
 import xml.etree.ElementTree as ET
 
+from UM.PluginRegistry import PluginRegistry
 from UM.Resources import Resources
 from UM.Logger import Logger
 import UM.Dictionary
@@ -720,6 +721,8 @@ class XmlMaterialProfile(InstanceContainer):
                         new_hotend_material._dirty = False
 
                         if is_new_material:
+                            if ContainerRegistry.getInstance().isReadOnly(self.getId()):
+                                ContainerRegistry.getInstance().setExplicitReadOnly(new_hotend_material.getId())
                             containers_to_add.append(new_hotend_material)
 
                     # there is only one ID for a machine. Once we have reached here, it means we have already found
@@ -1066,7 +1069,8 @@ class XmlMaterialProfile(InstanceContainer):
     #   This loads the mapping from a file.
     @classmethod
     def getProductIdMap(cls) -> Dict[str, List[str]]:
-        product_to_id_file = os.path.join(os.path.dirname(sys.modules[cls.__module__].__file__), "product_to_id.json")
+        plugin_path = cast(str, PluginRegistry.getInstance().getPluginPath("XmlMaterialProfile"))
+        product_to_id_file = os.path.join(plugin_path, "product_to_id.json")
         with open(product_to_id_file, encoding = "utf-8") as f:
             product_to_id_map = json.load(f)
         product_to_id_map = {key: [value] for key, value in product_to_id_map.items()}

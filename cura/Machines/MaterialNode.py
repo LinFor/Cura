@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from typing import Dict
     from cura.Machines.VariantNode import VariantNode
 
+
 ##  Represents a material in the container tree.
 #
 #   Its subcontainers are quality profiles.
@@ -76,9 +77,7 @@ class MaterialNode(ContainerNode):
                 # The quality profiles only reference a material with the material_root_id. They will never state something
                 # such as "generic_pla_ultimaker_s5_AA_0.4". So we search with the "base_file" which is the material_root_id.
             else:
-                qualities = container_registry.findInstanceContainersMetadata(type = "quality",
-                                                                              definition = self.variant.machine.quality_definition,
-                                                                              material = self.base_file)
+                qualities = container_registry.findInstanceContainersMetadata(type = "quality", definition = self.variant.machine.quality_definition, material = self.base_file)
             if not qualities:
                 my_material_type = self.material_type
                 if self.variant.machine.has_variants:
@@ -86,8 +85,7 @@ class MaterialNode(ContainerNode):
                                                                                                definition = self.variant.machine.quality_definition,
                                                                                                variant = self.variant.variant_name)
                 else:
-                    qualities_any_material = container_registry.findInstanceContainersMetadata(type = "quality",
-                                                                                               definition = self.variant.machine.quality_definition)
+                    qualities_any_material = container_registry.findInstanceContainersMetadata(type = "quality", definition = self.variant.machine.quality_definition)
                 for material_metadata in container_registry.findInstanceContainersMetadata(type = "material", material = my_material_type):
                     qualities.extend((quality for quality in qualities_any_material if quality.get("material") == material_metadata["base_file"]))
 

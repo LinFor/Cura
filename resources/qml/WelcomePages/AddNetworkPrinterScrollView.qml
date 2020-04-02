@@ -56,7 +56,7 @@ Item
             ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
             property int maxItemCountAtOnce: 8  // show at max 8 items at once, otherwise you need to scroll.
-            height: Math.min(contentHeight, maxItemCountAtOnce * UM.Theme.getSize("action_button").height)
+            height: Math.min(contentHeight, (maxItemCountAtOnce * UM.Theme.getSize("action_button").height) - UM.Theme.getSize("default_margin").height)
 
             visible: networkPrinterListView.count > 0
 
@@ -66,12 +66,13 @@ Item
             {
                 id: networkPrinterListView
                 anchors.fill: parent
-                model: CuraApplication.getDiscoveredPrintersModel().discoveredPrinters
+                model: contentLoader.enabled ? CuraApplication.getDiscoveredPrintersModel().discoveredPrinters: undefined
 
                 section.property: "modelData.sectionName"
                 section.criteria: ViewSection.FullString
                 section.delegate: sectionHeading
-
+                boundsBehavior: Flickable.StopAtBounds
+                flickDeceleration: 20000  // To prevent the flicking behavior.
                 cacheBuffer: 1000000   // Set a large cache to effectively just cache every list item.
 
                 Component.onCompleted:
