@@ -25,5 +25,6 @@
     <setting key="print cooling">15.0</setting>
     <setting key="retraction amount">0.6</setting>
     <setting key="retraction speed">20.0</setting>
+    <cura:setting key="material_linear_advance_factor">0.055</cura:setting>
   </settings>
 </fdmmaterial>

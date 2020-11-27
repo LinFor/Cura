@@ -56,14 +56,14 @@
         "machine_max_feedrate_z": { "value": 100 },
         "machine_max_feedrate_e": { "value": 200 },
 
-        "machine_max_acceleration_x": { "value": 750 },
-        "machine_max_acceleration_y": { "value": 750 },
+        "machine_max_acceleration_x": { "value": 3000 },
+        "machine_max_acceleration_y": { "value": 3000 },
         "machine_max_acceleration_z": { "value": 100 },
         "machine_max_acceleration_e": { "value": 5000 },
-        "machine_acceleration": { "value": 750 },
+        "machine_acceleration": { "value": 3000 },
         "acceleration_enabled": { "value": false },
-        "acceleration_print": { "value": 750 },
-        "acceleration_travel": { "value": 750 },
+        "acceleration_print": { "value": 500 },
+        "acceleration_travel": { "value": 1500 },
         "acceleration_travel_layer_0": { "value": "acceleration_travel" },
         "acceleration_roofing": { "enabled": "acceleration_enabled and roofing_layer_count > 0 and top_layers > 0" },
 
@@ -71,7 +71,7 @@
         "machine_max_jerk_z": { "value": 0.4 },
         "machine_max_jerk_e": { "value": 5 },
         "jerk_enabled": { "value": false },
-        "jerk_print": { "value": 12.3 },
+        "jerk_print": { "value": 10 },
         "jerk_travel": { "value": "jerk_print" },
         "jerk_travel_layer_0": { "value": "jerk_travel" },
 
